@@ -1,0 +1,19 @@
+---
+title: "2017-12-12_microarray_singscore"
+author: "Ming Tang"
+date: "December 12, 2017"
+output: html_document
+---
+
+```{r}
+devtools::install_github('DavisLaboratory/singscore')
+library(singscore)
+browseVignettes('singscore')
+data("tgfb_expr_10")
+rankedData <- rankExpr(tgfb_expr_10)
+
+scoredf <- singscoring(rankedData,tgfb_gs_up,tgfb_gs_dn)
+
+plotRankDensity(rankedData[,1,drop = FALSE], upSet = tgfb_gs_up, 
+                downSet = tgfb_gs_dn, isInteractive = FALSE)
+```

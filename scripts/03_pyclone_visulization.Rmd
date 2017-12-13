@@ -1,0 +1,200 @@
+---
+title: "03_pyclone_visualization"
+author: "Ming Tang"
+date: "December 13, 2017"
+output: html_document
+---
+
+### re-implement all the plottings with ggplot2
+
+
+testing for 1 patient
+
+```{r}
+#install.packages("ggpubr")
+library(here)
+library(ggpubr)
+library(ggplot2)
+library(tidyverse)
+loci_file<- here("results/pyclone/Pa29_pyclone_analysis/tables/loci.tsv")
+
+loci<- read_tsv(loci_file, col_names = T)
+```
+
+https://stackoverflow.com/questions/10493084/ggplot2-jitter-and-position-dodge-together
+
+
+```{r}
+## remove clusters with very few mutations
+## this is for boxplot 
+
+loci_df<- loci %>% 
+        group_by(cluster_id) %>% 
+        mutate(cluster_size = n()) %>%
+        filter(cluster_size >=10) %>% 
+        ungroup() %>%
+        dplyr::select(mutation_id,sample_id, cluster_id, cellular_prevalence) %>%
+        mutate(cluster_id = as.factor(cluster_id))
+
+
+pdf("results/pyclone3/Pa04_box.pdf", width = 6, height = 6)
+
+ggplot(loci_df, aes(x = cluster_id, y = cellular_prevalence, color = sample_id)) +
+        geom_boxplot(outlier.shape=NA) +
+        geom_jitter(shape=16, position=position_jitterdodge()) +
+        theme_bw(base_size = 18)
+
+dev.off()
+
+
+## this is for violin plot
+
+## not working!! why?
+ggplot(loci_df, aes(x = as.factor(cluster_id), y = cellular_prevalence, fill = sample_id)) +
+        geom_violin()
+
+ggplot(loci_df, aes(x = cluster_id, y = cellular_prevalence, fill = sample_id)) +
+        geom_violin()
+
+ggplot(ToothGrowth, aes(x=as.factor(dose), y=len, fill = supp)) + geom_violin()
+
+## this is for scatter plot
+loci_df2<- loci %>%
+        group_by(cluster_id) %>% 
+        mutate(cluster_size = n()) %>%
+        filter(cluster_size >=10) %>%
+        ungroup() %>%
+        dplyr::select(-cellular_prevalence_std, -variant_allele_frequency) %>% 
+        spread(sample_id, cellular_prevalence) %>%
+        mutate(cluster_id = as.factor(cluster_id))
+
+
+pdf("results/pyclone3/Pa04_scatter3.pdf", width = 6, height = 6)
+ggplot(loci_df2, aes(x =  Pa25_T1, y = Pa25_T2)) +
+        geom_jitter(aes(color = cluster_id), size = 2, alpha = 0.5, width = 0.01) +
+        scale_color_discrete(guide = guide_legend(title = "cluster")) +
+                coord_equal() +
+        theme_bw(base_size = 18)
+dev.off()
+    
+``` 
+
+### functional programming with ggplot2/dplyr
+
+non-standard evaluation
+
+
+```{r}
+
+## x is the fold name contain the pyclone analysis for each patient
+## e.g. Pa25_pyclone_analysis
+
+make_CCF_hist<- function(x){
+        file<- here("results/pyclone", x, "tables", "loci.tsv")
+        loci<- read_tsv(file, col_names = T)
+        patient<- gsub("_pyclone_analysis", "", x)
+        
+        ## data frame for box plot
+        loci_df<- loci %>% 
+        group_by(cluster_id) %>% 
+        mutate(cluster_size = n()) %>%
+        filter(cluster_size >=10) %>% 
+        ungroup() %>%
+        dplyr::select(mutation_id,sample_id, cluster_id, cellular_prevalence) %>%
+        mutate(cluster_id = as.factor(cluster_id))
+        
+        ## make box plot
+        pdf(here(paste0("results/pyclone/", patient, "_box.pdf")), width = 6, height = 6)
+        
+        p<- ggplot(loci_df, aes(x = cluster_id, y = cellular_prevalence, color = sample_id)) +
+                geom_boxplot(outlier.shape=NA) +
+                geom_jitter(shape=16, position=position_jitterdodge()) +
+                theme_bw(base_size = 18)
+        print(p)
+        
+        dev.off()
+        
+}
+
+make_CCF_hist("Pa25_pyclone_analysis")
+
+map(dir(here("results/pyclone"), pattern = "analysis"), make_CCF_hist)
+
+
+## 
+make_CCF_scatter<- function(x){
+        file<- here("results", "pyclone", x, "tables", "loci.tsv")
+        loci<- read_tsv(file, col_names = T)
+        patient<- gsub("_pyclone_analysis", "", x)
+        
+        ## data frame for box plot
+        loci_df2<- loci %>%
+        group_by(cluster_id) %>% 
+        mutate(cluster_size = n()) %>%
+        filter(cluster_size >=10) %>%
+        ungroup() %>%
+        dplyr::select(-cellular_prevalence_std, -variant_allele_frequency) %>% 
+        spread(sample_id, cellular_prevalence) %>%
+        mutate(cluster_id = as.factor(cluster_id))
+        
+        ## make scatter plot
+        ## depending on how many samples from a patient.
+        ## pairwise comparison, if 4 samples: 4x3/2= 6 figures
+        pdf(here(paste0("results/pyclone/", patient, "_scatter.pdf")), width = 6, height = 6)
+        x<- names(loci_df2)[4]
+        y<- names(loci_df2)[5]
+        p<- ggplot(loci_df2, aes_string(x =  x, y = y)) +
+                geom_jitter(aes(color = cluster_id), size = 2, alpha = 0.5, width = 0.01) +
+                scale_color_discrete(guide = guide_legend(title = "cluster")) +
+                coord_equal() +
+                theme_bw(base_size = 18)
+        print(p)
+        
+        dev.off()
+        
+}
+
+make_CCF_scatter("Pa26_pyclone_analysis")
+make_CCF_scatter("Pa29_pyclone_analysis")
+
+map(dir(here("results/pyclone"), pattern = "analysis"), make_CCF_scatter)
+```
+https://stackoverflow.com/questions/35717353/split-violin-plot-with-ggplot2
+
+split violin plot
+
+```{r}
+
+ GeomSplitViolin <- ggproto("GeomSplitViolin", GeomViolin, draw_group = function(self, data, ..., draw_quantiles = NULL){
+  data <- transform(data, xminv = x - violinwidth * (x - xmin), xmaxv = x + violinwidth * (xmax - x))
+  grp <- data[1,'group']
+  newdata <- plyr::arrange(transform(data, x = if(grp%%2==1) xminv else xmaxv), if(grp%%2==1) y else -y)
+  newdata <- rbind(newdata[1, ], newdata, newdata[nrow(newdata), ], newdata[1, ])
+  newdata[c(1,nrow(newdata)-1,nrow(newdata)), 'x'] <- round(newdata[1, 'x']) 
+  if (length(draw_quantiles) > 0 & !scales::zero_range(range(data$y))) {
+    stopifnot(all(draw_quantiles >= 0), all(draw_quantiles <= 
+                                              1))
+    quantiles <- create_quantile_segment_frame(data, draw_quantiles)
+    aesthetics <- data[rep(1, nrow(quantiles)), setdiff(names(data), c("x", "y")), drop = FALSE]
+    aesthetics$alpha <- rep(1, nrow(quantiles))
+    both <- cbind(quantiles, aesthetics)
+    quantile_grob <- GeomPath$draw_panel(both, ...)
+    ggplot2:::ggname("geom_split_violin", grobTree(GeomPolygon$draw_panel(newdata, ...), quantile_grob))
+  }
+  else {
+    ggplot2:::ggname("geom_split_violin", GeomPolygon$draw_panel(newdata, ...))
+  }
+})
+
+geom_split_violin <- function (mapping = NULL, data = NULL, stat = "ydensity", position = "identity", ..., draw_quantiles = NULL, trim = TRUE, scale = "area", na.rm = FALSE, show.legend = NA, inherit.aes = TRUE) {
+  layer(data = data, mapping = mapping, stat = stat, geom = GeomSplitViolin, position = position, show.legend = show.legend, inherit.aes = inherit.aes, params = list(trim = trim, scale = scale, draw_quantiles = draw_quantiles, na.rm = na.rm, ...))
+}
+        
+
+
+ggplot(ToothGrowth, aes(x= as.factor(dose), y=len, fill=supp)) +
+  geom_violin()
+
+
+```
+
