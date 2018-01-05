@@ -1,0 +1,492 @@
+---
+title: "07_sequenza_copynumber_gene"
+author: "Ming Tang"
+date: "January 3, 2018"
+output: html_document
+---
+
+### run gistic for copy number analysis rather than based on the overlap of the segment
+
+```bash
+cd /rsrch2/genomic_med/krai/mixing_histology_snakemake/14sequenza_out
+mkdir segments
+find . -name "*segments.txt" | parallel cp {} segments/
+
+cd segments
+R
+```
+
+```{r}
+library(tidyverse)
+library(readr)
+seg_files<- list.files(".", pattern = "*segments.txt", full.names = F) 
+
+seg_dat_list <- lapply(seg_files, function(f) {
+        dat<- read_tsv(f, col_names = T, col_types = cols(.default = col_character()))
+        sample<- gsub("_vs_.*segments.txt", "", f)
+        dat$sample<- sample
+        return(dat)
+})
+
+seg_dat <- do.call(rbind, seg_dat_list)
+
+gistic_input<- seg_dat %>% select(chromosome, start.pos, end.pos, N.BAF, depth.ratio, sample) %>% mutate(depth.ratio = as.numeric(depth.ratio)) %>% mutate(depth.ratio = log2(2 * depth.ratio) -1)
+
+write_tsv(gistic_input, "all_segments.txt")
+```
+
+
+
+```{bash}
+rsync -avhP railab:mixing_histology_snakemake/14sequenza_out/segments/gistic_out data/
+```
+
+```{r}
+gistic_gene<- read_tsv("data/gistic_out/all_thresholded.by_genes.txt", col_names = T)
+library(here)
+cancer_genes_CNV<- read_tsv(here("data/COSMIC_Cancer_gene_Census/CGC_copynumber_genes.tsv"), col_names = T)
+cancer_genes_CNV
+inner_join(gistic_gene, cancer_genes_CNV, by = c("Gene Symbol" = "gene_symbol")) %>% View()
+
+gistic_df<- inner_join(gistic_gene, cancer_genes_CNV, by = c("Gene Symbol" = "gene_symbol")) 
+
+gistic_df<- gistic_df %>% dplyr::select(- `Locus ID`, - Cytoband, - entrez_gene_id, -mutation_type, -role)
+gistic_mat<- as.matrix(gistic_df[,-1])
+rownames(gistic_mat)<- gistic_df$`Gene Symbol`
+
+library(ComplexHeatmap)
+Heatmap(gistic_mat, 
+        cluster_rows = T, cluster_columns = F, rect_gp = gpar(type = "none"),
+        cell_fun = cell_fun, row_dend_reorder = T, column_dend_reorder = T,
+        name = "log2\ndepth ratio")
+
+```
+
+
+### map the genes to the segments file from sequenza.
+
+
+```{r}
+library(here)
+library(tidyverse)
+cancer_genes_CNV<- read_tsv(here("data/COSMIC_Cancer_gene_Census/CGC_copynumber_genes.tsv"), col_names = T)
+
+library(TxDb.Hsapiens.UCSC.hg19.knownGene)
+library(org.Hs.eg.db)
+hg19.txdb<- TxDb.Hsapiens.UCSC.hg19.knownGene
+hg19.genes<- genes(hg19.txdb)
+
+gene_symbol<- AnnotationDbi::select(org.Hs.eg.db, keys=hg19.genes$gene_id, 
+                                    columns="SYMBOL", keytype="ENTREZID")
+hg19.genes$gene_symbol<- gene_symbol$SYMBOL
+
+## some genes are missing.
+cancer_genes_gr<- hg19.genes[hg19.genes$gene_symbol %in% cancer_genes$symbol]
+
+cancer_gene_mutations<- read_tsv(here("data/cancer_genes/wustl_curated_variants.tsv"), col_names = T,
+                                 col_types = cols(.default = col_character()))
+
+canonical_cancer_genes<- cancer_gene_mutations$gene %>% unique()
+
+cancer_genes_CNV_gr<- hg19.genes[hg19.genes$gene_symbol %in% cancer_genes_CNV$gene_symbol]
+```
+
+### make segments file for IGV visualization
+
+```{r}
+library(tidyverse)
+library(purrr)
+sequenza_dir<- here("results/14sequenza_out")
+seg.files<- list.files(sequenza_dir, pattern = "*segments.txt", recursive = T, full.names = T)
+
+sequenza2igv<- function(seg.file){
+        sample.id<- gsub("_vs_.+", "", basename(seg.file))
+        seg<- read.table(seg.file, header = T, stringsAsFactors = F, sep = "\t")
+        
+        seg.igv<- seg %>% mutate(ID = sample.id, seg.mean = log2(depth.ratio)) %>% 
+        mutate(chromosome = paste0("chr",chromosome)) %>% 
+        dplyr::rename(chrom = chromosome, loc.start = start.pos, loc.end = end.pos) %>% 
+        dplyr::select(ID, chrom, loc.start, loc.end, seg.mean)
+
+        write.table(seg.igv, here("results/igv_segments", paste0(sample.id, ".seg")), quote =F, row.names = F, col.names = T, sep = "\t")
+        
+}
+
+map(seg.files, sequenza2igv)
+```
+
+
+### read in sequenza segments file
+
+```{r}
+library(ComplexHeatmap)
+library(dplyr)
+library(tibble)
+library(tidyr)
+sequenza_dir<- here("results/14sequenza_out")
+
+seg.files<- list.files(sequenza_dir, pattern = "*segments.txt", recursive = T, full.names = T)
+
+seg_datlist <- lapply(seg.files, function(f) {
+        dat = read.table(f, header =T, sep ="\t", quote = "\"")
+        dat$sample = gsub("_vs_.+", "", basename(f))
+        return(dat)
+})
+
+
+mixing_segs<- do.call(rbind,seg_datlist)
+
+## add chr 
+mixing_segs<- mixing_segs %>% 
+        mutate(chromosome = paste0("chr", chromosome)) %>% 
+        dplyr::rename(chr = chromosome, start = start.pos, end = end.pos)
+
+mixing_seg_gr<- makeGRangesFromDataFrame(mixing_segs, keep.extra.columns = T)
+
+seg_hits<- findOverlaps(cancer_genes_CNV_gr, mixing_seg_gr, type = "within")
+
+
+## all genes
+seg_hits3<- findOverlaps(hg19.genes, mixing_seg_gr, type = "within")
+
+seg_gene_df<- bind_cols(as_tibble(cancer_genes_CNV_gr[queryHits(seg_hits)]), as_tibble(mixing_seg_gr[subjectHits(seg_hits)]))
+
+seg_gene_df2<- bind_cols(as_tibble(canonical_cancer_genes_gr[queryHits(seg_hits2)]), as_tibble(mixing_seg_gr[subjectHits(seg_hits2)]))
+
+seg_gene_df3<- bind_cols(as_tibble(hg19.genes[queryHits(seg_hits3)]), as_tibble(mixing_seg_gr[subjectHits(seg_hits3)]))
+
+
+
+seg_gene_df_wd<- seg_gene_df %>% dplyr::select(gene_symbol, depth.ratio, sample) %>% spread(sample, depth.ratio)
+
+seg_gene_df_wd2<- seg_gene_df2 %>% dplyr::select(gene_symbol, depth.ratio, sample) %>% spread(sample, depth.ratio)
+
+seg_gene_df_wd3<- seg_gene_df3 %>%
+        dplyr::select(gene_symbol, depth.ratio, sample) %>%
+        dplyr::filter(!is.na(gene_symbol)) %>%
+        distinct() %>%
+        spread(sample, depth.ratio)
+
+seg_gene_mat<- as.matrix(seg_gene_df_wd[,-1])
+seg_gene_mat2<- as.matrix(seg_gene_df_wd2[,-1])
+
+
+rownames(seg_gene_mat)<- seg_gene_df_wd$gene_symbol
+rownames(seg_gene_mat2)<- seg_gene_df_wd2$gene_symbol
+
+Heatmap(seg_gene_mat, cluster_rows = F, cluster_columns = F, name = "copynumber")
+Heatmap(log2(seg_gene_mat), cluster_rows = F, cluster_columns = F, name = "log2.depth.ratio")
+
+seg_gene_df_wd %>% filter(gene_symbol == "TP53") %>% View()
+seg_gene_df_wd2 %>% filter(gene_symbol == "RB1") %>% View()
+
+seg_gene_mat[apply(seg_gene_mat, 1, function(x) any(x >=1.2 | x <= 0.8)),] %>% na.omit %>% View()
+
+seg_gene_sub<- seg_gene_mat[apply(seg_gene_mat, 1, function(x) any(x >=1.2 | x <= 0.8)),] 
+
+
+cell_fun = function(j, i, x, y, width, height, fill) {
+	grid.rect(x = x, y = y, width = width * 0.95, height = height*0.95, 
+		gp = gpar(col = "grey", fill = fill, lty = 1, lwd = 0.5))
+}
+
+
+Heatmap(log2(seg_gene_sub), 
+        cluster_rows = T, cluster_columns = F, rect_gp = gpar(type = "none"),
+        cell_fun = cell_fun, row_dend_reorder = T, column_dend_reorder = T,
+        name = "log2\ndepth ratio")
+
+write.table(seg_gene_mat2, "results/copynumber_canonical_cancer_genes.txt", row.names = T, col.names = T, sep = "\t",
+            quote =F)
+
+
+### categorical discreterize: amp, del, neutral
+seg_gene_wd_dis<- seg_gene_df %>% mutate(CNV_status = case_when(
+        depth.ratio >= 1.2 ~ 1,
+        depth.ratio <= 0.8 ~ -1,
+        TRUE ~ 0
+)) %>%
+        dplyr::select(gene_symbol, CNV_status, sample) %>% spread(sample, CNV_status)
+
+seg_gene_mat_dis<- as.matrix(seg_gene_wd_dis[,-1])
+
+rownames(seg_gene_mat_dis)<- seg_gene_wd_dis$gene_symbol
+
+Heatmap(seg_gene_mat_dis, 
+        cluster_rows = T, cluster_columns = F, rect_gp = gpar(type = "none"),
+        cell_fun = cell_fun, row_dend_reorder = T, column_dend_reorder = T,
+        name = "log2\ndepth ratio")
+```
+
+
+### add meta data
+```{r}
+library(readr)
+mix_meta<- read_tsv("~/projects/mix_histology/data/mixing_histology_meta.txt", col_names = T)
+mix_meta<- mix_meta %>% 
+        dplyr::rename(cancer_type = Key, ID = `New ID`, sample_type = `Sample Type` ) %>%
+        filter(sample_type != "Normal") %>% 
+        mutate(cancer_type = tolower(cancer_type))
+
+mix_meta<- mix_meta %>% filter(!ID %in% c("Pa27N1", "Pa27T2", "Pa38T1", "Pa39T1", "Pa40T1")) %>% as.data.frame() %>% mutate(patient = gsub("T[0-9]+", "", ID))
+
+library(RColorBrewer)
+cols<- brewer.pal(5, "Dark2")
+cols.patient<- brewer.pal(12, "Paired")
+
+col.assign<- setNames(cols, unique(mix_meta$cancer_type))
+patient.assign<- setNames(cols.patient, unique(mix_meta$patient))
+rownames(mix_meta)<- mix_meta$ID
+df<- mix_meta[colnames(seg_gene_sub), c("cancer_type", "patient"), drop = FALSE]
+
+
+mix_ha<- HeatmapAnnotation(df = df, col = list(cancer_type = col.assign, patient = patient.assign))
+Heatmap(seg_gene_sub, name = "log2\ncopy number",
+        cluster_rows = T, cluster_columns = T, rect_gp = gpar(type = "none"),
+        cell_fun = cell_fun,
+        bottom_annotation = mix_ha)
+
+Heatmap(seg_gene_sub, name = "log2\ncopy number",
+        cluster_rows = T, cluster_columns = F, rect_gp = gpar(type = "none"),
+        cell_fun = cell_fun,
+        bottom_annotation = mix_ha)
+
+```
+
+
+
+
+
+Heatmap for altered genes
+
+```{r}
+
+genes_altered<- c(Pa02_seg$gene_symbol, Pa04_seg$gene_symbol, Pa05_seg$gene_symbol, Pa07_seg$gene_symbol)
+seg_gene_alter<- seg_gene_sub[, SCLC_meta$Tumor_Sample_Barcode][rownames(seg_gene_sub) %in% c(genes_altered, "RB1", "MYC","SOX2",                                       "FGFR1"),c(3,4,7,8,9,10,11,15,16)]
+
+pdf("results/copy_number_cancergenes.pdf", 8, 16)
+Heatmap(seg_gene_alter, name = "depth ratio",
+        cluster_rows = T, cluster_columns = F, rect_gp = gpar(type = "none"),
+        cell_fun = cell_fun)
+dev.off()
+```
+
+
+MSigDB http://software.broadinstitute.org/gsea/msigdb
+
+```{r}
+library(msigdf)
+
+library(clusterProfiler)
+
+c2 <- msigdf.human %>% 
+    filter(collection == "c2") %>% dplyr::select(geneset, entrez) %>% as.data.frame
+
+c6 <- msigdf.human %>% 
+    filter(collection == "c6") %>% dplyr::select(geneset, entrez) %>% as.data.frame
+
+ msigdf.human %>% 
+    filter(collection == "c6") 
+
+hallmark <- msigdf.human %>% 
+    filter(collection == "hallmark") %>% dplyr::select(geneset, entrez) %>% as.data.frame
+
+
+eghallmark <- map(egs, function(x) enricher(x$ENTREZID, TERM2GENE= hallmark, pvalueCutoff = 0.1))
+
+dotplot(eghallmark$Pa02)
+dotplot(eghallmark$Pa04)
+dotplot(eghallmark$Pa05)
+dotplot(eghallmark$Pa07)
+
+egc2 <- map(egs, function(x) enricher(x$ENTREZID, TERM2GENE= c2))
+dotplot(egc2$Pa02)
+dotplot(egc2$Pa04)
+dotplot(egc2$Pa05)
+dotplot(egc2$Pa07)
+
+egc6 <- map(egs, function(x) enricher(x$ENTREZID, TERM2GENE= c6))
+
+dotplot(egc6$Pa02)
+dotplot(egc6$Pa04)
+dotplot(egc6$Pa05)
+dotplot(egc6$Pa07)
+
+## emulate the dot plot
+library(stringr)
+
+gene_count<- y@result %>% group_by(ID) %>% summarise(count = sum(str_count(core_enrichment, "/")) + 1)
+
+dot_df<- left_join(y@result, gene_count, by = "ID") %>% mutate(GeneRatio = count/setSize) %>% arrange(GeneRatio)
+
+library(forcats)
+ggplot(dot_df, aes(x = GeneRatio, y = fct_reorder(ID, GeneRatio))) + 
+               geom_point(aes(size = GeneRatio, color = p.adjust)) +
+               theme_bw(base_size = 14) +
+        scale_colour_gradient(limits=c(0, 0.05), low="red") +
+        ylab(NULL) +
+        ggtitle("MSigDB hallmark gene sets enrichment")
+
+write_tsv(as.data.frame(y), "~/playground/zheng/microarray/MSigDB_pathway.tsv")
+```
+
+### Pathway analysis
+
+```{r}
+library(purrr)
+library(clusterProfiler)
+symbols_recur<- list(Pa02 = Pa02_seg$gene_symbol, 
+                     Pa04= Pa04_seg$gene_symbol, 
+                     Pa05 = Pa05_seg$gene_symbol, 
+                     Pa07 = Pa07_seg$gene_symbol)
+
+egs<- map(symbols_recur, function(x) bitr(x, fromType="SYMBOL", toType="ENTREZID", OrgDb="org.Hs.eg.db"))
+
+kks <- map(egs, function(x) enrichKEGG(gene         = x$ENTREZID,
+                 organism     = 'hsa',
+                 pvalueCutoff = 0.05))
+
+dotplot(kks$Pa02)
+dotplot(kks$Pa04)
+dotplot(kks$Pa05)
+dotplot(kks$Pa07)
+
+```
+
+### all genes, not only cancer genes.
+
+```{r}
+SCLC_seg_gr
+```
+
+
+entropy of the log2ratio 
+
+```{r}
+#install.packages("entropy")
+library(entropy)
+?discretize
+
+SCLC_segs
+
+range(SCLC_segs$depth.ratio)
+hist(range(SCLC_segs$depth.ratio))
+median(range(SCLC_segs$depth.ratio))
+
+
+SCLC_entropy<- SCLC_segs %>% dplyr::select(sample, depth.ratio) %>% group_by(sample) %>%
+        nest() %>% 
+        mutate(entropy_value =  map(data, function(x) entropy(discretize(x$depth.ratio, numBins=20, r=c(0,6)))))
+
+Pa03_mets<- SCLC_segs %>% dplyr::select(sample, depth.ratio) %>% filter(sample == "Pa03_mets")
+
+y=discretize(Pa03_mets$depth.ratio, numBins=20, r=c(-1,1))
+h= entropy(y )
+
+```
+
+
+### clustering of samples by copynumber 
+
+using CNTtools by John http://bioconductor.org/packages/release/bioc/html/CNTools.html
+not very detailed doc, but it works...
+
+```{r}
+library(CNTools)
+data("sampleData")
+
+setwd("~/projects/mix_histology/results/sequenza/")
+
+seg.files<- list.files(".", pattern = "*.seg", recursive = F)[c(1:4,7:28)]
+
+seg_datlist <- lapply(seg.files, function(f) {
+        dat = read.table(f, header =T, sep ="\t", quote = "\"")
+        return(dat)
+})
+
+
+mix_segs<- do.call(rbind,seg_datlist)
+
+## the package only works on chromsome name without chr!
+mix_segs<- mutate(mix_segs,chrom = gsub("chr", "", chrom))
+
+cnseg<- CNSeg(mix_segs)
+data("geneInfo")
+rdseg <- getRS(cnseg, by = "gene", imput = FALSE, XY = FALSE, what = "mean",  geneMap = geneInfo)
+reducedseg <- rs(rdseg)
+
+## also need to filter out small fragment (<1kb)
+filteredrs <- madFilter(rdseg, 0.8)
+reducedseg1<- rs(filteredrs) 
+
+mix_seg_mat<- reducedseg[, 6:ncol(reducedseg)] %>% as.matrix()
+mix_seg_mat<- apply(mix_seg_mat, 2, as.numeric)
+Heatmap(mix_seg_mat, name = "log2\ncopy number",
+        cluster_rows = T, cluster_columns = T,
+        bottom_annotation = mix_ha)
+
+mix_seg_d<- as.dist(1- cor(mix_seg_mat))
+plot(hclust(mix_seg_d))
+
+Heatmap(cor(mix_seg_mat), cluster_rows = F, cluster_columns = F, name = "copy number\ncorrelation")
+library(lsa)
+Heatmap(cosine(mix_seg_mat), cluster_rows = F, cluster_columns = F, name = "copy number\n cosine distance")
+
+cell_fun2 = function(j, i, x, y, width, height, fill) {
+	grid.rect(x = x, y = y, width = width * 0.95, height = height*0.95, 
+		gp = gpar(col = "grey", fill = fill, lty = 1, lwd = 0.5))
+}
+
+Heatmap(cosine(mix_seg_mat), cluster_rows = F, cluster_columns = F, name = "copy number\n cosine distance",
+        rect_gp = gpar(type = "none"),
+        cell_fun = cell_fun2,
+        bottom_annotation = mix_ha)
+
+
+library(dendextend)
+seg_dend<- hclust(mix_seg_d) %>% as.dendrogram() %>% sort(type = "nodes")
+plot(seg_dend)
+
+labels(seg_dend)
+## now, no colors
+labels_colors(seg_dend)
+
+## I want to color according to patient
+seg_ind<- match(labels(seg_dend), mix_meta$ID)
+
+patient_ind<- mix_meta$patient[seg_ind]
+
+## change the dendrogram label
+library(RColorBrewer)
+display.brewer.all()
+
+cols<-  brewer.pal(12, "Paired")
+labels_colors(seg_dend)<- cols[as.numeric(as.factor(patient_ind))]
+
+seg_dend <- color_branches(seg_dend, k = 12)
+plot(seg_dend)
+```
+
+
+### tumor purity
+
+```{r}
+purity.files<- list.files("results/sequenza2", pattern = "txt", full.names = T)
+
+purity_datlist <- lapply(purity.files, function(f) {
+        dat = read.table(f, header =T, sep ="\t", quote = "\"")
+        dat$sample = gsub("_vs_.+", "", basename(f))
+        return(dat)
+})
+
+
+SCLC_purity<- do.call(rbind,purity_datlist)
+
+SCLC_purity %>% group_by(sample) %>% filter(SLPP == min(SLPP)) %>% write_tsv("results/tumor_purity.txt")
+```
+
+
+```{r}
+options(scipen=999)
+t_df<- data.frame(chr = 10, start = 135000000)
+```
