@@ -114,10 +114,10 @@ alter_fun = list(
         grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"), gp = gpar(fill = "green", col = NA))
     },
     `frameshift insertion` = function(x, y, w, h) {
-        grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"), gp = gpar(fill = "green3", col = NA))
+        grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"), gp = gpar(fill = "#008000", col = NA))
     },
     splicing = function(x, y, w, h) {
-        grid.rect(x, y, w-unit(0.5, "mm"), h*0.33, gp = gpar(fill = "#008000", col = NA))
+        grid.rect(x, y, w-unit(0.5, "mm"), h*0.33, gp = gpar(fill = "purple", col = NA))
     },
     stopgain = function(x, y, w, h) {
         grid.rect(x, y, w-unit(0.5, "mm"), h*0.33, gp = gpar(fill = "yellow", col = NA))
@@ -125,8 +125,8 @@ alter_fun = list(
 )
 
 col<- c("nonsynonymous SNV" = "blue", "nonframeshift deletion"= "red", "frameshift deletion" = "red3",
-        "nonframeshift insertion" = "green", "frameshift insertion" = "green3", 
-        "splicing" = "#008000",  "stopgain" = "yellow")
+        "nonframeshift insertion" = "green", "frameshift insertion" = "#008000", 
+        "splicing" = "purple",  "stopgain" = "yellow")
 
 oncoPrint(mat_list,
     alter_fun = alter_fun, col = col, 
@@ -142,6 +142,13 @@ NUMBER_GENES<- 15
 slice_indx<- order(altered_nums, decreasing = TRUE)[1:NUMBER_GENES]
 
 mat_list_sub<-  lapply(mat_list, function(x) x[slice_indx,])
+
+select_top_n_genes<- function(NUMBER_GENES, mat_list){
+        altered_nums<- Reduce( "+" , lapply(mat_list, rowSums))
+        slice_indx<- order(altered_nums, decreasing = TRUE)[1:NUMBER_GENES]
+        mat_list_sub<-  lapply(mat_list, function(x) x[slice_indx,])
+        mat_list_sub
+}
 
 oncoPrint(mat_list_sub,
     alter_fun = alter_fun, col = col, 
@@ -166,7 +173,7 @@ oncoPrint(mat_list_sub,
 ### only plot a list of genes given
 
 ```{r}
-my_gene_list<- c("TP53", "EGFR", "RB1", "ATM", "PIK3CA", "DNMT3A", "NF1")
+my_gene_list<- c("TP53", "EGFR", "RB1", "ATM", "KRAS", "SOS1", "STK11", "PIK3CA", "DNMT3A", "NF1")
 
 mat_list_sub2<-  lapply(mat_list, function(x) x[my_gene_list,])
 
@@ -179,6 +186,233 @@ oncoPrint(mat_list_sub2,
 
 ```
 
+
+### what if a sample is not in the matrix, no mutations were identified.
+
+```{r}
+
+my_samples<- cadd_dat %>% pull(sample) %>% unique()
+
+unify_mat_list2<- function (mat_list, default = 0, common_cn) {
+    common_rn = unique(unlist(lapply(mat_list, rownames)))
+    #common_cn = unique(unlist(lapply(mat_list, colnames)))
+    mat_list2 = lapply(seq_along(mat_list), function(i) {
+        mat = matrix(default, nrow = length(common_rn), ncol = length(common_cn))
+        dimnames(mat) = list(common_rn, common_cn)
+        mat[rownames(mat_list[[i]]), colnames(mat_list[[i]])] = mat_list[[i]]
+        mat
+    })
+    names(mat_list2) = names(mat_list)
+    return(mat_list2)
+}
+
+mat_list2<- unify_mat_list2(mat_list, 0, my_samples)
+
+mat_list_sub3<-  lapply(mat_list2, function(x) x[my_gene_list,])
+
+oncoPrint(mat_list_sub3,
+    alter_fun = alter_fun, col = col, 
+    column_title = "mixing histology",
+    # row_order = NULL,
+    show_column_names =T
+    )
+
+## only plot a subset of the samples, now, remove Pa25, Pa28 and Pa32 and Pa29T3, need to subset mix_ha 
+
+my_sample_list<- my_samples[c(3,4,7,8,10,11:14,17:26)]
+mat_list_sub4<-  lapply(mat_list2, function(x) x[my_gene_list, my_sample_list])
+
+
+```
+
+### annotation of the oncoprint
+
+```{r}
+library(readr)
+mix_meta<- read_tsv("~/projects/mix_histology/data/mixing_histology_meta.txt", col_names = T)
+mix_meta<- mix_meta %>% 
+        dplyr::rename(cancer_type = Key, ID = `New ID`, sample_type = `Sample Type` ) %>%
+        mutate(cancer_type = tolower(cancer_type))
+
+mix_meta<- mix_meta %>% as.data.frame() %>% mutate(patient = gsub("[TN][0-9]+", "", ID)) %>%
+        filter(!patient %in% c("Pa27", "Pa38", "Pa39", "Pa40")) 
+
+### heatmap with annotation
+
+library(RColorBrewer)
+
+cols1<- brewer.pal(5, "Dark2")
+cols.patient1<- brewer.pal(12, "Paired")
+
+mix_df1<- mix_meta[,c(1,4)] %>% filter(cancer_type != "normal")
+
+rownames(mix_df1)<- mix_meta %>% filter(cancer_type != "normal") %>% .$ID
+
+col.assign1<- setNames(cols1, unique(mix_df1$cancer_type))
+patient.assign1<- setNames(cols.patient1, unique(mix_df1$patient))
+
+
+mix_ha1<- HeatmapAnnotation(df = mix_df1, 
+                            col = list(cancer_type = col.assign1, patient = patient.assign1),
+                            gp = gpar(col = "black"))
+
+oncoPrint(mat_list_sub3,
+    alter_fun = alter_fun, col = col, 
+    column_title = "mixing histology",
+    # row_order = NULL,
+    column_order = NULL,
+    show_column_names =T,
+    row_names_gp = gpar(fontsize = 10),
+    pct_gp = gpar(fontsize = 10),
+    bottom_annotation = mix_ha1
+    )
+
+oncoPrint(mat_list_sub3,
+    alter_fun = alter_fun, col = col, 
+    column_title = "mixing histology",
+    # row_order = NULL,
+    column_order = NULL,
+    show_column_names =T,
+    row_names_gp = gpar(fontsize = 10),
+    pct_gp = gpar(fontsize = 10),
+    top_annotation  = mix_ha1
+    )
+
+oncoPrint(mat_list_sub4,
+    alter_fun = alter_fun, col = col, 
+    column_title = "mixing histology",
+    # row_order = NULL,
+    column_order = NULL,
+    show_column_names =T,
+    row_names_gp = gpar(fontsize = 10),
+    pct_gp = gpar(fontsize = 10),
+    top_annotation  = mix_ha1
+    )
+```
+
+### add copy number info for the oncoprint
+
+```{r}
+gistic_df
+
+## clean a bit, if it is oncogene, and it is deleted, change -1 or -2 to 0.
+## if it is TSG, it is amplified, change 1 or 2 to 0
+
+## change to long format first 
+gistic_df<- gistic_df %>% dplyr::select(- `Locus ID`, - Cytoband, - entrez_gene_id, -mutation_type)
+gistic_df_wd<- gather(gistic_df, sample, CNV_status, 2:27) %>% 
+        mutate(CNV_status = case_when(
+                role == "oncogene" & (CNV_status == -1 | CNV_status == -2 ) ~ 0,
+                role == "TSG" & (CNV_status == 1 | CNV_status == 2) ~ 0,
+                TRUE ~ as.double(CNV_status)
+        ))
+
+## CNV gain
+
+CNV_gain<- gistic_df_wd %>% 
+        filter(CNV_status >0) %>%
+        mutate(CNV_status = ifelse(CNV_status >=2, 1, CNV_status)) %>% 
+        select(`Gene Symbol`, sample, CNV_status) %>%
+        spread(sample, CNV_status, fill = 0)
+
+
+CNV_gain_mat<-as.matrix(CNV_gain[,-1])
+
+rownames(CNV_gain_mat)<- CNV_gain%>% pull(1)
+  
+## CNV loss
+CNV_loss<- gistic_df_wd %>% 
+        filter(CNV_status < 0) %>%
+        mutate(CNV_status = ifelse(CNV_status < 0, 1, CNV_status)) %>% 
+        select(`Gene Symbol`, sample, CNV_status) %>%
+        spread(sample, CNV_status, fill = 0)
+
+CNV_loss_mat<-as.matrix(CNV_loss[,-1])
+
+rownames(CNV_loss_mat)<- CNV_loss%>% pull(1)
+
+
+mat_list$`CNV gain`<- CNV_gain_mat
+mat_list$`CNV loss` <- CNV_loss_mat
+mat_list3<- unify_mat_list2(mat_list, 0, my_samples)
+
+### 
+```
+
+### oncoprint with copy number information
+
+```{r}
+alter_fun = list(
+    background = function(x, y, w, h) {
+        grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"), gp = gpar(fill = "#CCCCCC", col = NA))
+    },
+    `nonsynonymous SNV` = function(x, y, w, h) {
+        grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"), gp = gpar(fill = "red", col = NA))
+    },
+    `nonframeshift deletion` = function(x, y, w, h) {
+        grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"), gp = gpar(fill = "blue", col = NA))
+    },
+    `frameshift deletion` = function(x, y, w, h) {
+        grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"), gp = gpar(fill = "blue3", col = NA))
+    },
+    `nonframeshift insertion` = function(x, y, w, h) {
+        grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"), gp = gpar(fill = "green", col = NA))
+    },
+    `frameshift insertion` = function(x, y, w, h) {
+        grid.rect(x, y, w-unit(0.5, "mm"), h-unit(0.5, "mm"), gp = gpar(fill = "#008000", col = NA))
+    },
+    splicing = function(x, y, w, h) {
+        grid.rect(x, y, w-unit(0.5, "mm"), h*0.33, gp = gpar(fill = "purple", col = NA))
+    },
+    stopgain = function(x, y, w, h) {
+        grid.rect(x, y, w-unit(0.5, "mm"), h*0.33, gp = gpar(fill = "yellow", col = NA))
+    },
+    `CNV gain` = function(x, y, w, h) {
+            w = convertWidth(w, "cm")
+            h = convertHeight(h, "cm")
+            r = min(unit.c(w, h))
+            grid.circle(x, y, r *2, gp = gpar(fill = "red", col = NA))
+    },
+    `CNV loss` = function(x, y, w, h) {
+            w = convertWidth(w, "cm")
+            h = convertHeight(h, "cm")
+            r = min(unit.c(w, h))
+            grid.circle(x, y, r*2, gp = gpar(fill = "blue", col = NA))
+    }
+)
+
+col<- c("nonsynonymous SNV" = "red", "nonframeshift deletion"= "blue", "frameshift deletion" = "blue3",
+        "nonframeshift insertion" = "green", "frameshift insertion" = "#008000", 
+        "splicing" = "purple",  "stopgain" = "yellow", "CNV gain" = "red", "CNV loss" = "blue")
+
+my_gene_list<- c("TP53", "EGFR", "RB1", "ATM", "KRAS", "SOS1", "STK11", "PIK3CA", "DNMT3A", "NF1", "FBXW7")
+
+mat_list_sub5<-  lapply(mat_list3, function(x) x[my_gene_list,])
+
+oncoPrint(mat_list_sub5,
+    alter_fun = alter_fun, col = col, 
+    column_title = "mixing histology oncoplot",
+    # row_order = NULL,
+    column_order = NULL,
+    show_column_names =T,
+    row_names_gp = gpar(fontsize = 10),
+    pct_gp = gpar(fontsize = 10),
+    top_annotation  = mix_ha1
+    )
+
+mat_list_sub6<- select_top_n_genes(15, mat_list3)
+
+oncoPrint(mat_list_sub6,
+    alter_fun = alter_fun, col = col, 
+    column_title = "mixing histology",
+    # row_order = NULL,
+    column_order = NULL,
+    show_column_names =T,
+    row_names_gp = gpar(fontsize = 10),
+    pct_gp = gpar(fontsize = 10),
+    top_annotation  = mix_ha1
+    )
+```
 
 
 

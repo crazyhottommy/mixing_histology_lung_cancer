@@ -50,7 +50,7 @@ inner_join(gistic_gene, cancer_genes_CNV, by = c("Gene Symbol" = "gene_symbol"))
 
 gistic_df<- inner_join(gistic_gene, cancer_genes_CNV, by = c("Gene Symbol" = "gene_symbol")) 
 
-gistic_df<- gistic_df %>% dplyr::select(- `Locus ID`, - Cytoband, - entrez_gene_id, -mutation_type, -role)
+gistic_df<- gistic_df %>% dplyr::select(- `Locus ID`, - Cytoband, - entrez_gene_id, -mutation_type, -role) %>% distinct()
 gistic_mat<- as.matrix(gistic_df[,-1])
 rownames(gistic_mat)<- gistic_df$`Gene Symbol`
 
@@ -58,7 +58,9 @@ library(ComplexHeatmap)
 Heatmap(gistic_mat, 
         cluster_rows = T, cluster_columns = F, rect_gp = gpar(type = "none"),
         cell_fun = cell_fun, row_dend_reorder = T, column_dend_reorder = T,
-        name = "log2\ndepth ratio")
+        name = "gistic\nthresholded CNV",
+        heatmap_legend_param = list(color_bar = "discrete"),
+        top_annotation = mix_ha1)
 
 ```
 
