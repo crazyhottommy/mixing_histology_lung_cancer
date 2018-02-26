@@ -71,6 +71,7 @@ walk(cadd$data, here("results", paste0(cadd$patient, "_mutations_CGC_filtered.tx
 
 oncoprint_input<- cadd %>% unnest() %>% mutate(ExonicFunc.refGene = ifelse(is.na(ExonicFunc.refGene), Func.refGene, ExonicFunc.refGene )) %>% filter( ! ExonicFunc.refGene %in% c("synonymous SNV", "UTR3", "UTR5", "intronic"))  %>% filter( as.numeric(cellular_prevalence) >= 0.05)
 
+
 ## x is dataframe in long format.
 turn_df_to_matrix<-function(x) {
         x<- x %>% spread(sample, value, fill = 0)
@@ -371,13 +372,13 @@ alter_fun = list(
             w = convertWidth(w, "cm")
             h = convertHeight(h, "cm")
             r = min(unit.c(w, h))
-            grid.circle(x, y, r *2, gp = gpar(fill = "red", col = NA))
+            grid.circle(x, y, r * 0.5, gp = gpar(fill = "red", col = NA))
     },
     `CNV loss` = function(x, y, w, h) {
             w = convertWidth(w, "cm")
             h = convertHeight(h, "cm")
             r = min(unit.c(w, h))
-            grid.circle(x, y, r*2, gp = gpar(fill = "blue", col = NA))
+            grid.circle(x, y, r* 0.5, gp = gpar(fill = "blue", col = NA))
     }
 )
 
@@ -385,9 +386,14 @@ col<- c("nonsynonymous SNV" = "red", "nonframeshift deletion"= "blue", "frameshi
         "nonframeshift insertion" = "green", "frameshift insertion" = "#008000", 
         "splicing" = "purple",  "stopgain" = "yellow", "CNV gain" = "red", "CNV loss" = "blue")
 
-my_gene_list<- c("TP53", "EGFR", "RB1", "ATM", "KRAS", "SOS1", "STK11", "PIK3CA", "DNMT3A", "NF1", "FBXW7")
+my_gene_list<- c("TP53", "EGFR", "ATM", "KRAS", "SOS1", "STK11", "PIK3CA", "NF1", "FBXW7")
 
-mat_list_sub5<-  lapply(mat_list3, function(x) x[my_gene_list,])
+
+my_samples<- cadd_dat %>% pull(sample) %>% unique()
+my_samples_sub<- my_samples[!my_samples %in% c("Pa25_T1", "Pa25_T2", "Pa28_T1", "Pa28_T2", "Pa29_T3",
+                                   "Pa32_T1", "Pa32_T2")]
+
+mat_list_sub5<-  lapply(mat_list3, function(x) x[my_gene_list, my_samples_sub])
 
 oncoPrint(mat_list_sub5,
     alter_fun = alter_fun, col = col, 
@@ -397,7 +403,7 @@ oncoPrint(mat_list_sub5,
     show_column_names =T,
     row_names_gp = gpar(fontsize = 10),
     pct_gp = gpar(fontsize = 10),
-    top_annotation  = mix_ha1
+    top_annotation  = mix_ha
     )
 
 mat_list_sub6<- select_top_n_genes(15, mat_list3)
@@ -413,6 +419,11 @@ oncoPrint(mat_list_sub6,
     top_annotation  = mix_ha1
     )
 ```
+
+
+
+
+
 
 
 

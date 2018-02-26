@@ -13,7 +13,15 @@ library(oligo)
 library(pd.clariom.s.human)
 
 celFiles <- list.celfiles('~/projects/mix_histology/data/microarray/Andrew_Futreal_SMF-MT-244_WTPico-HuClariomS_101817', full.names=TRUE)
+
+## exclude Pa25, Pa29T3, Pa28 and Pa32.
+celFiles<- celFiles[c(4:6,10:12,14, 15:20, 24:38)]
+
+
 ab<- read.celfiles(celFiles)
+
+
+
 
 eset<- oligo::rma(ab)
 boxplot(eset,las =2)
@@ -75,8 +83,13 @@ mix_meta<- mix_meta %>%
         dplyr::rename(cancer_type = Key, ID = `New ID`, sample_type = `Sample Type` ) %>%
         mutate(cancer_type = tolower(cancer_type))
 
-mix_meta<- mix_meta %>% as.data.frame() %>% mutate(patient = gsub("[TN][0-9]+", "", ID)) %>%
+# mix_meta<- mix_meta %>% as.data.frame() %>% mutate(patient = gsub("[TN][0-9]+", "", ID)) %>%
         filter(!patient %in% c("Pa27", "Pa38", "Pa39", "Pa40")) 
+        
+mix_meta<- mix_meta %>% as.data.frame() %>% mutate(patient = gsub("[TN][0-9]+", "", ID)) %>%
+        filter(!patient %in% c("Pa25", "Pa27", "Pa28", "Pa32", "Pa38", "Pa39", "Pa40")) %>%
+        filter(ID != "Pa29T3")
+
 
 library(stringr)
 rownames(Z)<-  rownames(Z) %>% str_sub(1,6)
@@ -96,7 +109,10 @@ ggplot(pca_df,aes(x=PC1, y=PC2)) + geom_point(aes(col = cancer_type, shape = can
 library(genefilter)
 
 ## remove normals and Pa27
-exp_mat_tumor<- exp_mat[, c(2 ,3,  5,  6,  8,  9, 11, 12, 13, 14, 16, 17, 19, 20, 22, 23, 25, 26, 28, 29, 31, 32, 34, 35, 37, 38)]
+# exp_mat_tumor<- exp_mat[, c(2 ,3,  5,  6,  8,  9, 11, 12, 13, 14, 16, 17, 19, 20, 22, 23, 25, 26, 28, 29, 31, 32, 34, 35, 37, 38)]
+
+exp_mat_tumor<- exp_mat[, c(2 ,3,  5,  6, 7,  9,10, 12, 13,15, 16, 18,19,21, 22, 24,25, 27, 28)]
+
 rv<- rowVars(log2(exp_mat))
 rv1<- rowVars(log2(exp_mat_tumor))
 ## select the top 250 most variable genes for clustering
@@ -125,6 +141,15 @@ Heatmap(X1[idx1,], name = "microarray",
         clustering_distance_columns ="euclidean",
         clustering_method_columns = "ward.D2")
 
+
+Heatmap(X1[idx1,], name = "microarray", 
+        show_row_names = FALSE, show_column_names = TRUE, 
+        row_dend_reorder = TRUE, column_dend_reorder = TRUE,
+        clustering_distance_rows = "euclidean",
+        clustering_method_rows = "ward.D2",
+        clustering_distance_columns ="euclidean",
+        clustering_method_columns = "ward.D2",
+        top_annotation = mix_ha)
 colnames(exp_mat_tumor) <- colnames(X1) 
 boxplot(exp_mat_tumor, las = 2)
 

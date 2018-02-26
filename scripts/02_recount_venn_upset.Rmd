@@ -62,7 +62,10 @@ plot_venn<- function(x){
 
 lapply(venn_list, plot_venn)
 
+### Pa29 exclude T3
+Pa29_venn<- Venn(venn_list$Pa29[c(1,2,4)])
 
+plot(Pa29_venn, doWeights = TRUE, type = "circles")
 ```
 
 ### upsetR plot
@@ -77,6 +80,15 @@ upset<- dat %>% dplyr:: select(chr, start, annovar_ref, annovar_alt, sample) %>%
         distinct() %>% 
         spread(sample, value, fill = 0)
 
+upset<- dat %>% dplyr:: select(chr, start, annovar_ref, annovar_alt, sample) %>% 
+        filter(!sample %in% c("Pa25_T1", "Pa25_T2", "Pa28_T1", "Pa28_T2",
+                            "Pa29_T3", "Pa32_T1", "Pa32_T2")) %>%
+        mutate( mutation = paste(chr, start, annovar_ref, annovar_alt, sep=":")) %>% 
+        mutate(value =1) %>% 
+        dplyr::select(sample, mutation, value) %>% 
+        distinct() %>% 
+        spread(sample, value, fill = 0)
+
 ### change the column name, remove the _
 names(upset)<- names(upset) %>% str_replace("_", "")
 
@@ -85,7 +97,7 @@ upset(as.data.frame(upset), keep.order = TRUE,
       sets = rev(colnames(upset)[-1]),
       nsets = 30, text.scale = 1.2,
       number.angles = -45,
-      nintersects = 35,
+      nintersects = 30,
       order.by = "freq",
       mainbar.y.label = "number of mutations shared", 
       sets.x.label = "number of mutations in each tumor",
@@ -100,7 +112,8 @@ mix_meta<- mix_meta %>%
         mutate(cancer_type = tolower(cancer_type))
 
 mix_meta<- mix_meta %>% as.data.frame() %>% mutate(patient = gsub("[TN][0-9]+", "", ID)) %>%
-        filter(!patient %in% c("Pa27", "Pa38", "Pa39", "Pa40")) %>%
+        filter(!patient %in% c("Pa25", "Pa27", "Pa28", "Pa32", "Pa38", "Pa39", "Pa40")) %>%
+        filter(ID != "Pa29T3") %>%
         filter(sample_type != "Normal")
         
 
@@ -144,7 +157,7 @@ upset(as.data.frame(upset),
       sets.x.label = "number of mutations in each region",
       sets.bar.color = "#56B4E9",
       shade.alpha = 0.4,
-      nintersects = 35,
+      nintersects = 30,
       mainbar.y.max = 1100)
 
 dev.off()
@@ -182,10 +195,10 @@ patient.ind2<- mix_meta$patient[ind2]
 library(RColorBrewer)
 display.brewer.all()
 
-cols<-  brewer.pal(12, "Paired")
-labels_colors(dend2)<- cols[as.numeric(as.factor(patient.ind2))]
+cols.patient1<-  brewer.pal(9, "Paired")
+labels_colors(dend2)<- cols.patient1[as.numeric(as.factor(patient.ind2))]
 
-dend2 <- color_branches(dend2, k = 12)
+dend2 <- color_branches(dend2, k = 9)
 plot(dend2)
 ```
 
@@ -238,7 +251,7 @@ library(RColorBrewer)
 
 set.seed(1)
 cols<- brewer.pal(5, "Dark2")
-cols.patient<- brewer.pal(12, "Paired")
+cols.patient<- brewer.pal(9, "Paired")
 
 mix_df<- mix_meta[,c(1,4)]
 
@@ -258,7 +271,7 @@ Heatmap(cosine(mix.mat), cluster_columns = F, cluster_rows = F, name = "cosine d
         cell_fun = cell_fun,
         rect_gp = gpar(type = "none"),
         col = col_fun1,
-        bottom_annotation = mix_ha)
+        top_annotation = mix_ha)
 
 dev.off()
 ```

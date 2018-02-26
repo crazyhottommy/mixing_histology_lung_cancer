@@ -62,6 +62,61 @@ Heatmap(gistic_mat,
         heatmap_legend_param = list(color_bar = "discrete"),
         top_annotation = mix_ha1)
 
+Heatmap(gistic_mat, 
+        cluster_rows = T, cluster_columns = T, rect_gp = gpar(type = "none"),
+        cell_fun = cell_fun, row_dend_reorder = T, column_dend_reorder = T,
+        name = "gistic\nthresholded CNV",
+        heatmap_legend_param = list(color_bar = "discrete"),
+        top_annotation = mix_ha1)
+
+
+library(readr)
+mix_meta<- read_tsv("~/projects/mix_histology/data/mixing_histology_meta.txt", col_names = T)
+mix_meta<- mix_meta %>% 
+        dplyr::rename(cancer_type = Key, ID = `New ID`, sample_type = `Sample Type` ) %>%
+        mutate(cancer_type = tolower(cancer_type))
+
+mix_meta<- mix_meta %>% as.data.frame() %>% mutate(patient = gsub("[TN][0-9]+", "", ID)) %>%
+        filter(!patient %in% c("Pa27", "Pa38", "Pa39", "Pa40")) 
+
+mix_df1<- mix_meta[,c(1,4)] %>% filter(cancer_type != "normal")
+rownames(mix_df1)<- mix_meta %>% filter(cancer_type != "normal") %>% .$ID
+
+mix_df2<- mix_df1[!rownames(mix_df1) %in% c("Pa25T1", "Pa25T2", "Pa28T1", "Pa28T2", "Pa29T3", "Pa32T1", "Pa32T2"),]
+
+cols2<- brewer.pal(length(unique(mix_df2$cancer_type)), "Dark2")
+cols.patient2<- brewer.pal(length(unique(mix_df2$patient)), "Paired")
+
+col.assign2<- setNames(cols2, unique(mix_df2$cancer_type))
+patient.assign2<- setNames(cols.patient2, unique(mix_df2$patient))
+
+
+mix_ha2<- HeatmapAnnotation(df = mix_df2, 
+                            col = list(cancer_type = col.assign2, patient = patient.assign2),
+                            gp = gpar(col = "black"))
+
+head(gistic_mat)
+gistic_mat_sub<- gistic_mat[, ! colnames(gistic_mat) %in% c("Pa25_T1", "Pa25_T2", "Pa28_T1", "Pa28_T2", "Pa29_T3", "Pa32_T1", "Pa32_T2")]
+
+colnames(gistic_mat_sub) <- colnames(gistic_mat_sub) %>% str_replace("_", "")
+
+pdf("results/gistic_cluster_CNV.pdf", 10, 10)
+Heatmap(gistic_mat_sub, 
+        cluster_rows = T, cluster_columns = T, rect_gp = gpar(type = "none"),
+        cell_fun = cell_fun, row_dend_reorder = T, column_dend_reorder = T,
+        name = "gistic\nthresholded CNV",
+        heatmap_legend_param = list(color_bar = "discrete"),
+        top_annotation = mix_ha2)
+dev.off()
+
+pdf("results/gistic_cluster_CNV1.pdf", 10, 10)
+Heatmap(gistic_mat_sub, 
+        cluster_rows = T, cluster_columns = T, rect_gp = gpar(type = "none"),
+        cell_fun = cell_fun, row_dend_reorder = T, column_dend_reorder = T,
+        name = "gistic\nthresholded CNV",
+        heatmap_legend_param = list(color_bar = "discrete"),
+        top_annotation = mix_ha)
+dev.off()
 ```
 
 
@@ -139,7 +194,7 @@ seg_datlist <- lapply(seg.files, function(f) {
 mixing_segs<- do.call(rbind,seg_datlist)
 
 ## add chr 
-mixing_segs<- mixing_segs %>% 
+mixing_segs %>% 
         mutate(chromosome = paste0("chr", chromosome)) %>% 
         dplyr::rename(chr = chromosome, start = start.pos, end = end.pos)
 
@@ -397,10 +452,10 @@ not very detailed doc, but it works...
 library(CNTools)
 data("sampleData")
 
-setwd("~/projects/mix_histology/results/sequenza/")
+setwd("~/projects/mixing_histology_lung_cancer/results/igv_segments")
 
-seg.files<- list.files(".", pattern = "*.seg", recursive = F)[c(1:4,7:28)]
-
+seg.files<- list.files(".", pattern = "*.seg", recursive = F)
+seg.files<- seg.files[c(3:4,7,8,10,11:14,17:26)]
 seg_datlist <- lapply(seg.files, function(f) {
         dat = read.table(f, header =T, sep ="\t", quote = "\"")
         return(dat)
@@ -410,7 +465,7 @@ seg_datlist <- lapply(seg.files, function(f) {
 mix_segs<- do.call(rbind,seg_datlist)
 
 ## the package only works on chromsome name without chr!
-mix_segs<- mutate(mix_segs,chrom = gsub("chr", "", chrom))
+mix_segs<- mutate(mix_segs,ID = gsub("_", "",ID), chrom = gsub("chr", "", chrom))
 
 cnseg<- CNSeg(mix_segs)
 data("geneInfo")
@@ -439,11 +494,12 @@ cell_fun2 = function(j, i, x, y, width, height, fill) {
 		gp = gpar(col = "grey", fill = fill, lty = 1, lwd = 0.5))
 }
 
+pdf("results/copynumber_cosine_correlation.pdf", 8, 6)
 Heatmap(cosine(mix_seg_mat), cluster_rows = F, cluster_columns = F, name = "copy number\n cosine distance",
         rect_gp = gpar(type = "none"),
-        cell_fun = cell_fun2,
-        bottom_annotation = mix_ha)
-
+        cell_fun = cell_fun,
+        top_annotation = mix_ha)
+dev.off()
 
 library(dendextend)
 seg_dend<- hclust(mix_seg_d) %>% as.dendrogram() %>% sort(type = "nodes")
@@ -463,9 +519,9 @@ library(RColorBrewer)
 display.brewer.all()
 
 cols<-  brewer.pal(12, "Paired")
-labels_colors(seg_dend)<- cols[as.numeric(as.factor(patient_ind))]
+labels_colors(seg_dend)<- cols.patient[as.numeric(as.factor(patient_ind))]
 
-seg_dend <- color_branches(seg_dend, k = 12)
+seg_dend <- color_branches(seg_dend, k = 9)
 plot(seg_dend)
 ```
 

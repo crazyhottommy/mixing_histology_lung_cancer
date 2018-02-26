@@ -159,9 +159,9 @@ convert maf files to vcf files.
 ```{bash}
 cd /rsrch2/genomic_med/krai/mixing_histology_snakemake/11recount_annovar
 
-find *wbc.maf | parallel 'perl ~/vcf2maf/maf2vcf.pl --input-maf {} --output-dir . --ref-fa /scratch/genomic_med/apps/annot/bundle/human_g1k_v37_decoy.fasta'
+find *N.maf | parallel 'perl ~/vcf2maf/maf2vcf.pl --input-maf {} --output-dir . --ref-fa /scratch/genomic_med/apps/annot/bundle/human_g1k_v37_decoy.fasta'
 
-cd /Users/mtang1/projects/mixing_histology/data/vcfs
+cd Users/mtang1/projects/mixing_histology_lung_cancer/data/vcfs
 
 rsync -avhP railab:mixing_histology_snakemake/11recount_annovar/ .
 ```
@@ -174,6 +174,7 @@ library(ref_genome, character.only = TRUE)
 vcf_files<- list.files("data/vcfs", pattern = "*.vcf", full.names = TRUE)
 basename(vcf_files)
 sample_names<- gsub("_vs_.+.vcf", "", basename(vcf_files))
+sample_names<- sample_names %>% str_replace("_", "")
 vcfs<- read_vcfs_as_granges(vcf_files, sample_names, genome = ref_genome)
 
 ## change the chromosome names from 1 to chr1 etc.
@@ -185,16 +186,20 @@ vcfs<- read_vcfs_as_granges(vcf_files, sample_names, genome = ref_genome)
 
 
 mut_mat<- mut_matrix(vcf_list = vcfs, ref_genome = ref_genome)
-plot_96_profile(mut_mat[,c(1:16)], ymax = 0.1) 
+plot_96_profile(mut_mat[,c(1:19)], ymax = 0.1) 
 plot_96_profile(mut_mat[,c(11:20)], ymax = 0.1)
 
+pdf("results/mutation_profile.pdf", 10, 12)
 plot_96_profile(mut_mat)
-
+dev.off()
 #install.packages("lsa")
 library(lsa)
 cosine(mut_mat[,1], mut_mat[,2])
-Heatmap(cosine(mut_mat), cluster_columns = F, cluster_rows = F, name = "cosine distance\nfor mutation spectrum")
 
+pdf("results/mutation_spectrum_heatmap.pdf", 8, 6)
+Heatmap(cosine(mut_mat), cluster_columns = F, cluster_rows = F, name = "cosine distance\nfor mutation spectrum", top_annotation = mix_ha, cell_fun = cell_fun,
+        rect_gp = gpar(type = "none") )
+dev.off()
 library(corrplot)
 
 corrplot(cosine(mut_mat), method="circle", type="lower")
@@ -280,11 +285,13 @@ df<- mix_meta[colnames(sig_mat_scaled), c("cancer_type", "patient"), drop = FALS
 
 
 mix_ha<- HeatmapAnnotation(df = df, col = list(cancer_type = col.assign, patient = patient.assign))
+pdf("results/mutation_signature.pdf", 8, 6)
 Heatmap(sig_mat_scaled, cluster_rows = F, cluster_columns = F, 
         rect_gp = gpar(type = "none"), 
         cell_fun = cell_fun,
         name = "% contribution",
-        bottom_annotation = mix_ha)
+        top_annotation = mix_ha)
+dev.off()
 ```
 
 

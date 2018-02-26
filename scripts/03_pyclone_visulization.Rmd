@@ -37,7 +37,7 @@ loci_df<- loci %>%
         mutate(cluster_id = as.factor(cluster_id))
 
 
-pdf("results/pyclone3/Pa04_box.pdf", width = 6, height = 6)
+pdf("results/pyclone/Pa29_box.pdf", width = 6, height = 6)
 
 ggplot(loci_df, aes(x = cluster_id, y = cellular_prevalence, color = sample_id)) +
         geom_boxplot(outlier.shape=NA) +
@@ -69,8 +69,8 @@ loci_df2<- loci %>%
         mutate(cluster_id = as.factor(cluster_id))
 
 
-pdf("results/pyclone3/Pa04_scatter3.pdf", width = 6, height = 6)
-ggplot(loci_df2, aes(x =  Pa25_T1, y = Pa25_T2)) +
+pdf("results/pyclone/Pa29_scatter3.pdf", width = 6, height = 6)
+ggplot(loci_df2, aes(x =  Pa29_T2, y = Pa29_T4)) +
         geom_jitter(aes(color = cluster_id), size = 2, alpha = 0.5, width = 0.01) +
         scale_color_discrete(guide = guide_legend(title = "cluster")) +
                 coord_equal() +
