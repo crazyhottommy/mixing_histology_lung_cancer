@@ -10,7 +10,7 @@ Paper: https://www.sciencedirect.com/science/article/pii/S155608641730388X
 
 ```{r}
 source("https://bioconductor.org/biocLite.R")
-biocLite("GEOquery")
+#biocLite("GEOquery")
 ################################################################
 #   Differential expression analysis with limma
 library(Biobase)
